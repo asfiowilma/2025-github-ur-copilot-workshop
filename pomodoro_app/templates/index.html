@@ -23,11 +23,39 @@
         <!-- Timer Display -->
         <div class="timer-display">
             <div class="timer-circle">
+                <svg class="progress-ring" width="220" height="220">
+                    <defs>
+                        <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <circle
+                        class="progress-ring__circle-bg"
+                        stroke="#e2e8f0"
+                        stroke-width="8"
+                        fill="transparent"
+                        r="100"
+                        cx="110"
+                        cy="110"
+                    />
+                    <circle
+                        class="progress-ring__circle"
+                        stroke="url(#progressGradient)"
+                        stroke-width="8"
+                        fill="transparent"
+                        r="100"
+                        cx="110"
+                        cy="110"
+                        id="progress-circle"
+                    />
+                </svg>
                 <div class="timer-inner">
                     <div class="time" id="timer-time">25:00</div>
                     <div class="status" id="timer-status">Ready to start</div>
                 </div>
             </div>
+            <canvas id="particles-canvas" class="particles-canvas"></canvas>
         </div>
 
         <!-- Control Buttons -->
