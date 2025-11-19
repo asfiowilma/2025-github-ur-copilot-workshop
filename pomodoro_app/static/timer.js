@@ -20,9 +20,17 @@ class PomodoroTimer {
             longBreakDuration: 15 * 60
         };
         
+        // Visual feedback
+        this.progressCircle = null;
+        this.progressCircleRadius = 100;
+        this.progressCircleCircumference = 0;
+        this.particleSystem = null;
+        
         // DOM elements
         this.initializeElements();
         this.loadSettings();
+        this.initializeProgressCircle();
+        this.initializeParticleSystem();
         this.resetTimer();
         this.bindEvents();
     }
@@ -34,6 +42,7 @@ class PomodoroTimer {
         this.sessionCountEl = document.getElementById('session-count');
         this.timerCircleEl = document.querySelector('.timer-circle');
         this.progressDotsEl = document.getElementById('progress-dots');
+        this.particlesCanvas = document.getElementById('particles-canvas');
         
         // Buttons
         this.startBtn = document.getElementById('start-btn');
@@ -48,6 +57,81 @@ class PomodoroTimer {
         this.longBreakInput = document.getElementById('long-break-duration');
         this.saveSettingsBtn = document.getElementById('save-settings-btn');
         this.cancelSettingsBtn = document.getElementById('cancel-settings-btn');
+    }
+    
+    initializeProgressCircle() {
+        this.progressCircle = document.getElementById('progress-circle');
+        if (!this.progressCircle) {
+            console.error('Progress circle element not found');
+            return;
+        }
+        this.progressCircleCircumference = 2 * Math.PI * this.progressCircleRadius;
+        
+        this.progressCircle.style.strokeDasharray = `${this.progressCircleCircumference} ${this.progressCircleCircumference}`;
+        this.progressCircle.style.strokeDashoffset = '0';
+    }
+    
+    initializeParticleSystem() {
+        if (!this.particlesCanvas) return;
+        
+        this.particleSystem = new ParticleSystem(this.particlesCanvas);
+    }
+    
+    updateProgressCircle(percentage) {
+        if (!this.progressCircle) return;
+        
+        const offset = this.progressCircleCircumference - (percentage / 100) * this.progressCircleCircumference;
+        this.progressCircle.style.strokeDashoffset = offset;
+        
+        // Update color based on time remaining (blue -> yellow -> red)
+        const color = this.getColorForPercentage(percentage);
+        const gradient = document.getElementById('progressGradient');
+        if (gradient) {
+            const stops = gradient.querySelectorAll('stop');
+            stops[0].setAttribute('style', `stop-color:${color.start};stop-opacity:1`);
+            stops[1].setAttribute('style', `stop-color:${color.end};stop-opacity:1`);
+        }
+        
+        // Update body background color
+        this.updateBodyBackground(percentage);
+    }
+    
+    getColorForPercentage(percentage) {
+        if (this.sessionType !== 'work') {
+            // Break sessions use green color
+            return { start: '#48bb78', end: '#38a169' };
+        }
+        
+        // Work sessions: blue -> yellow -> red
+        if (percentage > 66) {
+            // Blue zone (100% - 66%)
+            return { start: '#667eea', end: '#764ba2' };
+        } else if (percentage > 33) {
+            // Yellow zone (66% - 33%)
+            return { start: '#f6ad55', end: '#ed8936' };
+        } else {
+            // Red zone (33% - 0%)
+            return { start: '#fc8181', end: '#f56565' };
+        }
+    }
+    
+    updateBodyBackground(percentage) {
+        const body = document.body;
+        
+        if (this.sessionType !== 'work') {
+            // Break sessions
+            body.style.background = 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)';
+            return;
+        }
+        
+        // Work sessions: transition background color
+        if (percentage > 66) {
+            body.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        } else if (percentage > 33) {
+            body.style.background = 'linear-gradient(135deg, #f6ad55 0%, #ed8936 100%)';
+        } else {
+            body.style.background = 'linear-gradient(135deg, #fc8181 0%, #f56565 100%)';
+        }
     }
     
     loadSettings() {
@@ -110,19 +194,21 @@ class PomodoroTimer {
     updateDisplay() {
         this.timerTimeEl.textContent = this.formatTime(this.currentTime);
         
+        // Update progress circle
+        const totalDuration = this.getCurrentDuration();
+        const percentage = (this.currentTime / totalDuration) * 100;
+        this.updateProgressCircle(percentage);
+        
         // Update session info
         if (this.sessionType === 'work') {
             this.sessionTypeEl.textContent = 'Work Session';
             this.sessionCountEl.textContent = `Session ${this.currentSession} of ${this.maxSessions}`;
-            this.timerCircleEl.className = 'timer-circle active';
         } else if (this.sessionType === 'short_break') {
             this.sessionTypeEl.textContent = 'Short Break';
             this.sessionCountEl.textContent = `After Session ${this.currentSession - 1}`;
-            this.timerCircleEl.className = 'timer-circle break';
         } else {
             this.sessionTypeEl.textContent = 'Long Break';
             this.sessionCountEl.textContent = `After ${this.maxSessions} Sessions`;
-            this.timerCircleEl.className = 'timer-circle break';
         }
         
         // Update status
@@ -167,6 +253,11 @@ class PomodoroTimer {
         this.isPaused = false;
         this.startBtn.textContent = 'Pause';
         
+        // Start particle system
+        if (this.particleSystem && this.sessionType === 'work') {
+            this.particleSystem.start();
+        }
+        
         this.intervalId = setInterval(() => {
             if (this.currentTime > 0) {
                 this.currentTime--;
@@ -183,6 +274,11 @@ class PomodoroTimer {
         this.isRunning = false;
         this.isPaused = true;
         this.startBtn.textContent = 'Start';
+        
+        // Pause particle system
+        if (this.particleSystem) {
+            this.particleSystem.stop();
+        }
         
         if (this.intervalId) {
             clearInterval(this.intervalId);
@@ -316,3 +412,86 @@ class PomodoroTimer {
 document.addEventListener('DOMContentLoaded', () => {
     new PomodoroTimer();
 });
+
+// Particle System for immersive background effects
+class ParticleSystem {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.particles = [];
+        this.animationId = null;
+        this.isRunning = false;
+        
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+    }
+    
+    resize() {
+        const parent = this.canvas.parentElement;
+        this.canvas.width = parent.offsetWidth;
+        this.canvas.height = parent.offsetHeight;
+    }
+    
+    createParticle() {
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 0.5 + 0.2;
+        
+        return {
+            x: centerX,
+            y: centerY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: Math.random() * 2 + 1,
+            opacity: Math.random() * 0.5 + 0.2,
+            life: 1.0,
+            decay: Math.random() * 0.005 + 0.002
+        };
+    }
+    
+    start() {
+        if (this.isRunning) return;
+        this.isRunning = true;
+        this.animate();
+    }
+    
+    stop() {
+        this.isRunning = false;
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+        this.particles = [];
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+    
+    animate() {
+        if (!this.isRunning) return;
+        
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Create new particles
+        if (this.particles.length < 50) {
+            this.particles.push(this.createParticle());
+        }
+        
+        // Update and draw particles
+        this.particles = this.particles.filter(particle => {
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            particle.life -= particle.decay;
+            
+            if (particle.life <= 0) return false;
+            
+            this.ctx.beginPath();
+            this.ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+            this.ctx.fillStyle = `rgba(255, 255, 255, ${particle.opacity * particle.life})`;
+            this.ctx.fill();
+            
+            return true;
+        });
+        
+        this.animationId = requestAnimationFrame(() => this.animate());
+    }
+}
